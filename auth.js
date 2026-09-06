@@ -2,6 +2,7 @@
 const GOOGLE_API_KEY = 'AIzaSyDc-Zrm23BnSmeTDLW0_q87i0g4zRl7zNs'; 
 const GOOGLE_CLIENT_ID = '777477778567-voctcaip869sal0csf385d78vntdb0qc.apps.googleusercontent.com'; 
 const TEMPLATE_SHEET_ID = '1IkN-JzGjZIs3AaaSyLojr7fvP58FA_Gv'; 
+const REDIRECT_URI = 'https://ahmadhibban.github.io/My-Salah-Tracker-2.0/';
 // ==========================================================
 
 const AuthCSS = `<style>
@@ -27,7 +28,7 @@ const AuthHTML = `
 <div x-show="isAuthModalOpen" class="a-overlay" style="display:none;" x-transition.opacity x-cloak>
   <div class="a-card a-bg-dark" @click.stop>
     
-    <button type="button" class="a-close" @click="isAuthModalOpen=false" x-show="!isLogoutConfirmOpen">
+    <button type="button" class="a-close" @click="isAuthModalOpen=false" x-show="!isLogoutConfirmOpen && !isLoading">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6C7A80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(1px 1px 0px #FFF)"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     </button>
     
@@ -44,7 +45,7 @@ const AuthHTML = `
     
     <div x-show="isLoggedIn && !isLogoutConfirmOpen">
       <div class="a-circle a-c-log"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      <h3 class="a-title" style="margin-bottom:5px;">Profile</h3>
+      <h3 class="a-title" style="margin-bottom:5px;" x-text="isLoading ? 'Syncing...' : 'Profile'"></h3>
       <p style="font-size:14px;font-weight:900;color:#4A5568;margin-bottom:22px;text-shadow:1px 1px 0 #FFF;letter-spacing:0.5px;" x-text="regEmail"></p>
       
       <div class="a-sync a-bg">
@@ -55,7 +56,7 @@ const AuthHTML = `
         <p style="font-size:11px;font-weight:700;color:#8A9499;margin:0;text-shadow:1px 1px 0 #FFF;">Last Synced: <span x-text="lastSyncTime"></span></p>
       </div>
       
-      <button type="button" class="a-btn a-c-dan" style="margin-bottom:0;" @click="isLogoutConfirmOpen=true;">Disconnect</button>
+      <button type="button" class="a-btn a-c-dan" style="margin-bottom:0;" @click="isLogoutConfirmOpen=true;" x-show="!isLoading">Disconnect</button>
     </div>
     
     <div x-show="isLoggedIn && isLogoutConfirmOpen">
@@ -79,9 +80,24 @@ window.getAuthLogic=()=>({
   accessToken:localStorage.getItem('g_token')||null,
   isLoading:!1,
   lastSyncTime:localStorage.getItem('lastSyncTime')||'Never',
-  tokenClient: null,
   
   initAuth(){
+      // URL থেকে টোকেন চেক করা (রিডাইরেক্ট হয়ে আসার পর)
+      const hash = window.location.hash.substring(1);
+      const urlParams = new URLSearchParams(hash);
+      let tokenFromUrl = urlParams.get('access_token');
+      
+      if (tokenFromUrl) {
+          this.accessToken = tokenFromUrl;
+          localStorage.setItem('g_token', this.accessToken);
+          window.location.hash = ''; // URL ক্লিন করা
+          this.isLoggedIn = true;
+          localStorage.setItem('isLoggedIn', 'true');
+          
+          this.isAuthModalOpen = true; 
+          this.isLoading = true;
+      }
+
       const setupGAPI = async () => {
           try {
               if(!window.gapi) return setTimeout(setupGAPI, 500);
@@ -90,47 +106,40 @@ window.getAuthLogic=()=>({
                   apiKey: GOOGLE_API_KEY,
                   discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest', 'https://sheets.googleapis.com/$discovery/rest?version=v4']
               });
-              if(this.accessToken) gapi.client.setToken({ access_token: this.accessToken });
+              if(this.accessToken) {
+                  gapi.client.setToken({ access_token: this.accessToken });
+                  if(tokenFromUrl) {
+                      await this.fetchUserInfo();
+                      await this.setupDriveSheet();
+                      this.isAuthModalOpen = false;
+                      this.isLoading = false;
+                  }
+              }
           } catch(e) { console.error("GAPI Init Error:", e); }
       };
       setupGAPI();
-
-      const setupGIS = () => {
-          if(!window.google) return setTimeout(setupGIS, 500);
-          this.tokenClient = google.accounts.oauth2.initTokenClient({
-              client_id: GOOGLE_CLIENT_ID,
-              scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
-              callback: async (resp) => {
-                  if (resp.error) {
-                      this.isLoading = false;
-                      return alert("Google Login Failed!");
-                  }
-                  this.accessToken = resp.access_token;
-                  localStorage.setItem('g_token', this.accessToken);
-                  gapi.client.setToken({ access_token: this.accessToken });
-                  this.isLoggedIn = true;
-                  localStorage.setItem('isLoggedIn', 'true');
-                  await this.fetchUserInfo();
-                  await this.setupDriveSheet();
-                  this.isAuthModalOpen = false;
-                  this.isLoading = false;
-              }
-          });
-      };
-      setupGIS();
       window.addEventListener('online',()=>{if(this.isLoggedIn)this.forceCloudSync()});
   },
   
   openAuthModal(){ this.isAuthModalOpen=true; this.isLogoutConfirmOpen=false; this.isLoading=false; },
   
   login(){
-      if(!this.tokenClient) return alert("Google services are loading. Please wait a moment.");
       this.isLoading = true;
-      this.tokenClient.requestAccessToken({prompt: 'consent'});
+      const oauth2Endpoint = 'https://accounts.google.com/o/oauth2/v2/auth';
+      const params = {
+          client_id: GOOGLE_CLIENT_ID,
+          redirect_uri: REDIRECT_URI,
+          response_type: 'token',
+          scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+          prompt: 'consent'
+      };
+      const queryString = Object.keys(params).map(key => key + '=' + encodeURIComponent(params[key])).join('&');
+      
+      // পপআপের বদলে সরাসরি রিডাইরেক্ট (WebView এর জন্য ১০০% নিরাপদ)
+      window.location.href = oauth2Endpoint + '?' + queryString; 
   },
   
   logoutAccount(){
-      if (this.accessToken && window.google) google.accounts.oauth2.revoke(this.accessToken, ()=>{});
       this.isLoggedIn=false; localStorage.setItem('isLoggedIn','false');
       localStorage.removeItem('g_token'); localStorage.removeItem('regEmail'); localStorage.removeItem('userSheetId');
       if(window.appRef) window.appRef.db={}; localStorage.removeItem('prayer_db');
