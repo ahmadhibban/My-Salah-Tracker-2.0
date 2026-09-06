@@ -1,7 +1,7 @@
 // ====== আপনার নিজস্ব গুগল ক্লাউড এবং ড্রাইভের তথ্য ======
 const GOOGLE_API_KEY = 'AIzaSyDc-Zrm23BnSmeTDLW0_q87i0g4zRl7zNs'; 
 const GOOGLE_CLIENT_ID = '777477778567-voctcaip869sal0csf385d78vntdb0qc.apps.googleusercontent.com'; 
-const TEMPLATE_SHEET_ID = '1IkN-JzGjZIs3AaaSyLojr7fvP58FA_Gv'; 
+const TEMPLATE_SHEET_ID = '1_TR1_lYoRhoM0v-d2lb-ZRorriHP0YtdPKYFtx_NnU8'; 
 const REDIRECT_URI = 'https://ahmadhibban.github.io/My-Salah-Tracker-2.0/';
 // ==========================================================
 
