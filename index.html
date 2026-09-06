@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     
+    <!-- Anti-Cache Tags: অ্যাপ যেন সবসময় নতুন কোড লোড করে -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <!-- PWA & Native App Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,7 +21,7 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js"></script>
 
-    <!-- Keyboard Squish Fix Script: কিবোর্ড আসলে যেন ব্যাকগ্রাউন্ড পেজ ছোট না হয় -->
+    <!-- Keyboard Squish Fix & Badge Killer Script -->
     <script>
         function setAppHeight() {
             document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
@@ -28,12 +33,26 @@
         });
         window.addEventListener('DOMContentLoaded', setAppHeight);
         setAppHeight();
+
+        // শক্তিশালী Netlify Badge Killer
+        setInterval(() => {
+            document.querySelectorAll('div, a, iframe, span').forEach(el => {
+                if ((el.id && el.id.toLowerCase().includes('netlify')) || 
+                    (el.className && typeof el.className === 'string' && el.className.toLowerCase().includes('netlify')) ||
+                    (el.innerText && el.innerText.includes('Powered by Netlify'))) {
+                    el.style.display = 'none !important';
+                    el.remove();
+                }
+            });
+        }, 500);
     </script>
 
     <style>
-        /* Netlify ব্যাজ রিমুভ করার কোড */
-        div[id*="netlify"], iframe[id*="netlify"], #netlify-badge {
+        /* CSS Badge Remover */
+        div[id*="netlify"], iframe[id*="netlify"], #netlify-badge, .netlify-badge {
             display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@700;900&family=Plus+Jakarta+Sans:wght@500;700;800;900&display=swap');
