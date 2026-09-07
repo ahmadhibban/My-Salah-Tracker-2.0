@@ -5,7 +5,7 @@ const TEMPLATE_SHEET_ID = '1_TR1_lYoRhoM0v-d2lb-ZRorriHP0YtdPKYFtx_NnU8';
 const REDIRECT_URI = 'https://ahmadhibban.github.io/My-Salah-Tracker-2.0/';
 // ==========================================================
 
-// অটো-সিঙ্ক ট্রিগার (কোনো বাটনের দরকার নেই, একা একাই সিঙ্ক হবে)
+// অটো-সিঙ্ক ট্রিগার (সম্পূর্ণ সাইলেন্ট)
 (function(){
     const originalSet = localStorage.setItem;
     localStorage.setItem = function(key, value) {
@@ -59,7 +59,7 @@ const AuthHTML = `
     
     <div x-show="isLoggedIn && !isLogoutConfirmOpen">
       <div class="a-circle a-c-log"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      <h3 class="a-title" style="margin-bottom:5px;" x-text="isLoading ? 'Syncing...' : 'Profile'"></h3>
+      <h3 class="a-title" style="margin-bottom:5px;" x-text="isLoading ? 'Connecting...' : 'Profile'"></h3>
       <p style="font-size:14px;font-weight:900;color:#4A5568;margin-bottom:22px;text-shadow:1px 1px 0 #FFF;letter-spacing:0.5px;" x-text="regEmail"></p>
       
       <div class="a-sync a-bg">
@@ -67,7 +67,9 @@ const AuthHTML = `
           <div style="width:8px;height:8px;border-radius:50%;" :style="navigator.onLine?'background:#159C4C;box-shadow:0 0 5px #159C4C;':'background:#e74c3c;box-shadow:0 0 5px #e74c3c;'"></div>
           <span style="font-size:13px;font-weight:900;color:#4A5568;text-shadow:1px 1px 0 #FFF;" x-text="navigator.onLine?'Google Sheets Synced':'Offline Mode'"></span>
         </div>
-        <p style="font-size:11px;font-weight:700;color:#8A9499;margin:0;text-shadow:1px 1px 0 #FFF;">Last Synced: <span x-text="lastSyncTime" :style="lastSyncTime.includes('Error') ? 'color:red;' : ''"></span></p>
+        <p style="font-size:11px;font-weight:700;color:#8A9499;margin:0;text-shadow:1px 1px 0 #FFF;">
+          Last Synced: <span x-text="isBackgroundSyncing ? 'Syncing...' : lastSyncTime"></span>
+        </p>
       </div>
       
       <button type="button" class="a-btn a-c-dan" style="margin-bottom:0;" @click="isLogoutConfirmOpen=true;" x-show="!isLoading">Disconnect</button>
@@ -92,7 +94,8 @@ window.getAuthLogic=()=>({
   regEmail:localStorage.getItem('regEmail')||'',
   userSheetId:localStorage.getItem('userSheetId')||null,
   accessToken:localStorage.getItem('g_token')||null,
-  isLoading:!1,
+  isLoading:!1, // শুধুমাত্র প্রথমবার লগইনের জন্য
+  isBackgroundSyncing: !1, // ব্যাকগ্রাউন্ড সিঙ্কের জন্য
   lastSyncTime:localStorage.getItem('lastSyncTime')||'Never',
   
   initAuth(){
@@ -144,12 +147,11 @@ window.getAuthLogic=()=>({
           client_id: GOOGLE_CLIENT_ID,
           redirect_uri: REDIRECT_URI,
           response_type: 'token',
-          // এখানে ফুল ড্রাইভ পারমিশন দেওয়া হয়েছে, তাই গুগল আর এরর দেবে না
-          scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email',
+          // পুনরায় সেইফ পারমিশনে ফিরে গেলাম (drive.file)
+          scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
           prompt: 'consent'
       };
       const queryString = Object.keys(params).map(key => key + '=' + encodeURIComponent(params[key])).join('&');
-          
       window.location.href = oauth2Endpoint + '?' + queryString; 
   },
   
@@ -187,7 +189,7 @@ window.getAuthLogic=()=>({
           localStorage.setItem('userSheetId', this.userSheetId);
           await this.forceCloudSync();
       } catch(e) {
-          this.lastSyncTime = "Error: Please clear data & re-login";
+          this.lastSyncTime = "Error: Please re-login";
           localStorage.setItem('lastSyncTime', this.lastSyncTime);
       }
   },
@@ -195,9 +197,10 @@ window.getAuthLogic=()=>({
   async fetchCloudData(){},
 
   async forceCloudSync(){
-      if(!navigator.onLine || !this.isLoggedIn || !this.userSheetId || !window.gapi) return;
+      // যদি আগে থেকেই সিঙ্ক চলতে থাকে, তবে আবার রিকোয়েস্ট পাঠাবে না
+      if(!navigator.onLine || !this.isLoggedIn || !this.userSheetId || !window.gapi || this.isBackgroundSyncing) return;
       
-      this.isLoading = true;
+      this.isBackgroundSyncing = true; 
       try {
           let localDb = window.appRef ? window.appRef.db : JSON.parse(localStorage.getItem('prayer_db')||"{}");
           
@@ -227,23 +230,16 @@ window.getAuthLogic=()=>({
                   sheetNames.push(targetSheetName);
               }
 
-              let row = d.getDate() + 1; 
+              // সঠিক Row-তে ডেটা বসানোর লজিক (Date + 6)
+              let row = d.getDate() + 6; 
               let updates = [];
               
-              if (dayData.core.fajr) updates.push({ range: `${targetSheetName}!B${row}`, values: [["✓"]] });
-              else updates.push({ range: `${targetSheetName}!B${row}`, values: [[""]] });
-              
-              if (dayData.core.dhuhr) updates.push({ range: `${targetSheetName}!C${row}`, values: [["✓"]] });
-              else updates.push({ range: `${targetSheetName}!C${row}`, values: [[""]] });
-              
-              if (dayData.core.asr) updates.push({ range: `${targetSheetName}!D${row}`, values: [["✓"]] });
-              else updates.push({ range: `${targetSheetName}!D${row}`, values: [[""]] });
-              
-              if (dayData.core.maghrib) updates.push({ range: `${targetSheetName}!E${row}`, values: [["✓"]] });
-              else updates.push({ range: `${targetSheetName}!E${row}`, values: [[""]] });
-              
-              if (dayData.core.isha) updates.push({ range: `${targetSheetName}!F${row}`, values: [["✓"]] });
-              else updates.push({ range: `${targetSheetName}!F${row}`, values: [[""]] });
+              // চেকবক্সের জন্য TRUE/FALSE বুলিয়ান কোড
+              updates.push({ range: `${targetSheetName}!B${row}`, values: [[ dayData.core.fajr ? true : false ]] });
+              updates.push({ range: `${targetSheetName}!C${row}`, values: [[ dayData.core.dhuhr ? true : false ]] });
+              updates.push({ range: `${targetSheetName}!D${row}`, values: [[ dayData.core.asr ? true : false ]] });
+              updates.push({ range: `${targetSheetName}!E${row}`, values: [[ dayData.core.maghrib ? true : false ]] });
+              updates.push({ range: `${targetSheetName}!F${row}`, values: [[ dayData.core.isha ? true : false ]] });
 
               if(updates.length > 0){
                   let valueRanges = updates.map(u => ({ range: u.range, values: u.values }));
@@ -257,10 +253,9 @@ window.getAuthLogic=()=>({
           this.lastSyncTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           localStorage.setItem('lastSyncTime', this.lastSyncTime);
       } catch(e) {
-          this.lastSyncTime = "Error: Google API Blocked";
-          localStorage.setItem('lastSyncTime', this.lastSyncTime);
+          console.error("Sync Error: ", e);
       } finally {
-          this.isLoading = false;
+          this.isBackgroundSyncing = false;
       }
   }
 });
