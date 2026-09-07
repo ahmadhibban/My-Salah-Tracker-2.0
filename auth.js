@@ -5,7 +5,7 @@ const TEMPLATE_SHEET_ID = '1_TR1_lYoRhoM0v-d2lb-ZRorriHP0YtdPKYFtx_NnU8';
 const REDIRECT_URI = 'https://ahmadhibban.github.io/My-Salah-Tracker-2.0/';
 // ==========================================================
 
-// অটো-সিঙ্ক ট্রিগার (নামাজ মার্ক করার ২ সেকেন্ড পর অটো সিঙ্ক হবে)
+// অটো-সিঙ্ক ট্রিগার (কোনো বাটনের দরকার নেই, একা একাই সিঙ্ক হবে)
 (function(){
     const originalSet = localStorage.setItem;
     localStorage.setItem = function(key, value) {
@@ -70,10 +70,6 @@ const AuthHTML = `
         <p style="font-size:11px;font-weight:700;color:#8A9499;margin:0;text-shadow:1px 1px 0 #FFF;">Last Synced: <span x-text="lastSyncTime" :style="lastSyncTime.includes('Error') ? 'color:red;' : ''"></span></p>
       </div>
       
-      <button type="button" class="a-btn a-btn-sec" @click="forceCloudSync()" style="margin-bottom:12px;" :disabled="isLoading">
-         <span x-text="isLoading ? 'Syncing...' : 'Sync Now'"></span>
-      </button>
-
       <button type="button" class="a-btn a-c-dan" style="margin-bottom:0;" @click="isLogoutConfirmOpen=true;" x-show="!isLoading">Disconnect</button>
     </div>
     
@@ -148,10 +144,12 @@ window.getAuthLogic=()=>({
           client_id: GOOGLE_CLIENT_ID,
           redirect_uri: REDIRECT_URI,
           response_type: 'token',
-          scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+          // এখানে ফুল ড্রাইভ পারমিশন দেওয়া হয়েছে, তাই গুগল আর এরর দেবে না
+          scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email',
           prompt: 'consent'
       };
       const queryString = Object.keys(params).map(key => key + '=' + encodeURIComponent(params[key])).join('&');
+          
       window.location.href = oauth2Endpoint + '?' + queryString; 
   },
   
@@ -189,9 +187,8 @@ window.getAuthLogic=()=>({
           localStorage.setItem('userSheetId', this.userSheetId);
           await this.forceCloudSync();
       } catch(e) {
-          this.lastSyncTime = "Error: Template not accessible";
+          this.lastSyncTime = "Error: Please clear data & re-login";
           localStorage.setItem('lastSyncTime', this.lastSyncTime);
-          console.error("Setup Error: ", e);
       }
   },
   
@@ -260,9 +257,7 @@ window.getAuthLogic=()=>({
           this.lastSyncTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           localStorage.setItem('lastSyncTime', this.lastSyncTime);
       } catch(e) {
-          console.error("Sync Error: ", e);
-          let errMsg = e.result && e.result.error ? e.result.error.message : e.message;
-          this.lastSyncTime = "Error: " + (errMsg ? errMsg.substring(0, 25) : "API Failed");
+          this.lastSyncTime = "Error: Google API Blocked";
           localStorage.setItem('lastSyncTime', this.lastSyncTime);
       } finally {
           this.isLoading = false;
