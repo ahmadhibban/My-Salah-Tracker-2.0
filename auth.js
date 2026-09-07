@@ -5,6 +5,20 @@ const TEMPLATE_SHEET_ID = '1_TR1_lYoRhoM0v-d2lb-ZRorriHP0YtdPKYFtx_NnU8';
 const REDIRECT_URI = 'https://ahmadhibban.github.io/My-Salah-Tracker-2.0/';
 // ==========================================================
 
+// অটো-সিঙ্ক ট্রিগার (নামাজ মার্ক করার ২ সেকেন্ড পর অটো সিঙ্ক হবে)
+(function(){
+    const originalSet = localStorage.setItem;
+    localStorage.setItem = function(key, value) {
+        originalSet.apply(this, arguments);
+        if(key === 'prayer_db') {
+            clearTimeout(window.syncDbTimer);
+            window.syncDbTimer = setTimeout(() => {
+                window.dispatchEvent(new Event('auto-sync-db'));
+            }, 2000);
+        }
+    };
+})();
+
 const AuthCSS = `<style>
 .a-bg{background:linear-gradient(135deg,#FFF,#E8E8E8)} .a-bg-dark{background:linear-gradient(145deg,#F9F9F9,#E3E3E3)}
 .a-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(8px);display:flex;justify-content:center;align-items:center;z-index:99999;padding:15px;box-sizing:border-box;}
@@ -53,9 +67,13 @@ const AuthHTML = `
           <div style="width:8px;height:8px;border-radius:50%;" :style="navigator.onLine?'background:#159C4C;box-shadow:0 0 5px #159C4C;':'background:#e74c3c;box-shadow:0 0 5px #e74c3c;'"></div>
           <span style="font-size:13px;font-weight:900;color:#4A5568;text-shadow:1px 1px 0 #FFF;" x-text="navigator.onLine?'Google Sheets Synced':'Offline Mode'"></span>
         </div>
-        <p style="font-size:11px;font-weight:700;color:#8A9499;margin:0;text-shadow:1px 1px 0 #FFF;">Last Synced: <span x-text="lastSyncTime"></span></p>
+        <p style="font-size:11px;font-weight:700;color:#8A9499;margin:0;text-shadow:1px 1px 0 #FFF;">Last Synced: <span x-text="lastSyncTime" :style="lastSyncTime.includes('Error') ? 'color:red;' : ''"></span></p>
       </div>
       
+      <button type="button" class="a-btn a-btn-sec" @click="forceCloudSync()" style="margin-bottom:12px;" :disabled="isLoading">
+         <span x-text="isLoading ? 'Syncing...' : 'Sync Now'"></span>
+      </button>
+
       <button type="button" class="a-btn a-c-dan" style="margin-bottom:0;" @click="isLogoutConfirmOpen=true;" x-show="!isLoading">Disconnect</button>
     </div>
     
@@ -82,7 +100,6 @@ window.getAuthLogic=()=>({
   lastSyncTime:localStorage.getItem('lastSyncTime')||'Never',
   
   initAuth(){
-      // URL থেকে টোকেন চেক করা (রিডাইরেক্ট হয়ে আসার পর)
       const hash = window.location.hash.substring(1);
       const urlParams = new URLSearchParams(hash);
       let tokenFromUrl = urlParams.get('access_token');
@@ -90,10 +107,9 @@ window.getAuthLogic=()=>({
       if (tokenFromUrl) {
           this.accessToken = tokenFromUrl;
           localStorage.setItem('g_token', this.accessToken);
-          window.location.hash = ''; // URL ক্লিন করা
+          window.location.hash = ''; 
           this.isLoggedIn = true;
           localStorage.setItem('isLoggedIn', 'true');
-          
           this.isAuthModalOpen = true; 
           this.isLoading = true;
       }
@@ -118,7 +134,9 @@ window.getAuthLogic=()=>({
           } catch(e) { console.error("GAPI Init Error:", e); }
       };
       setupGAPI();
+      
       window.addEventListener('online',()=>{if(this.isLoggedIn)this.forceCloudSync()});
+      window.addEventListener('auto-sync-db',()=>{if(this.isLoggedIn)this.forceCloudSync()});
   },
   
   openAuthModal(){ this.isAuthModalOpen=true; this.isLogoutConfirmOpen=false; this.isLoading=false; },
@@ -134,8 +152,6 @@ window.getAuthLogic=()=>({
           prompt: 'consent'
       };
       const queryString = Object.keys(params).map(key => key + '=' + encodeURIComponent(params[key])).join('&');
-      
-      // পপআপের বদলে সরাসরি রিডাইরেক্ট (WebView এর জন্য ১০০% নিরাপদ)
       window.location.href = oauth2Endpoint + '?' + queryString; 
   },
   
@@ -171,9 +187,11 @@ window.getAuthLogic=()=>({
               this.userSheetId = copyReq.result.id;
           }
           localStorage.setItem('userSheetId', this.userSheetId);
-          this.forceCloudSync();
+          await this.forceCloudSync();
       } catch(e) {
-          alert("Could not create tracker file. Ensure the template is public.");
+          this.lastSyncTime = "Error: Template not accessible";
+          localStorage.setItem('lastSyncTime', this.lastSyncTime);
+          console.error("Setup Error: ", e);
       }
   },
   
@@ -182,6 +200,7 @@ window.getAuthLogic=()=>({
   async forceCloudSync(){
       if(!navigator.onLine || !this.isLoggedIn || !this.userSheetId || !window.gapi) return;
       
+      this.isLoading = true;
       try {
           let localDb = window.appRef ? window.appRef.db : JSON.parse(localStorage.getItem('prayer_db')||"{}");
           
@@ -242,6 +261,11 @@ window.getAuthLogic=()=>({
           localStorage.setItem('lastSyncTime', this.lastSyncTime);
       } catch(e) {
           console.error("Sync Error: ", e);
+          let errMsg = e.result && e.result.error ? e.result.error.message : e.message;
+          this.lastSyncTime = "Error: " + (errMsg ? errMsg.substring(0, 25) : "API Failed");
+          localStorage.setItem('lastSyncTime', this.lastSyncTime);
+      } finally {
+          this.isLoading = false;
       }
   }
 });
