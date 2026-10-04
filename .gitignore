@@ -1,0 +1,12 @@
+# Build artifacts
+bin/
+gen/
+build/
+*.unsigned.apk
+*.idsig
+
+# Keystores & logs
+*.log
+
+# Text notes
+[Aa].[Tt][Xx][Tt]
